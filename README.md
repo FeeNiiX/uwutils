@@ -5,7 +5,7 @@
 ### Controls
 
 | Key |  Command | | Key |  Command |
-| :---: | :--- | | :---: | :--- |
+| :---: | :--- | :---: | :---: | :--- |
 | **`1`** | Toggle Battle  | | **`8`** | Open Lootboxes |
 | **`2`** | Toggle Hunt    | | **`R`** | Watchdog Unpause |
 | **`3`** | Toggle OwO     | | **`W`** | Toggle Open Website |
