@@ -1,0 +1,18 @@
+{
+    "boss_tickets": 0,
+    "boss_last_reset": 0,
+    "progress_lifetime": {
+        "battles": 0,
+        "hunts": 0,
+        "owos": 0,
+        "captchas": 0,
+        "prays_curses": 0
+    },
+    "progress_today": {
+        "battles": 0,
+        "hunts": 0,
+        "owos": 0,
+        "captchas": 0,
+        "prays_curses": 0
+    }
+}

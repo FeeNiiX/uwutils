@@ -1,0 +1,36 @@
+{
+    "channel": 1234,
+    "captcha": {
+        "reccur": true,
+        "notifications": true,
+        "popup": false,
+        "openWebsite": true,
+        "playAudio": {
+            "enabled": true,
+            "path": "Wake.m4a"
+        },
+        "image_solver": true
+    },
+    "commands": {
+        "cooldown": 15.5,
+        "prefix": "owo",
+        "battle": true,
+        "hunt": false,
+        "owo": true,
+        "pray": {
+            "enabled": true,
+            "pingId": null
+        },
+        "curse": {
+            "enabled": false,
+            "pingId": null
+        }
+    },
+    "bossBattle": {
+        "enabled": true,
+        "ignoreGuilds": [],
+        "joinGuilds": [
+            559475774441259008
+        ]
+    }
+}

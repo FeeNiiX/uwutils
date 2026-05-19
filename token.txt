@@ -1,0 +1,3 @@
+token channel_id
+
+channel_id is for the other files, for dawn channel is in settings.json
