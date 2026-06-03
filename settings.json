@@ -1,5 +1,7 @@
 {
-    "channel": 1234,
+    "channel": 67,
+    "channel_misc": 67,
+    "debug_info": true,
     "captcha": {
         "reccur": true,
         "notifications": true,

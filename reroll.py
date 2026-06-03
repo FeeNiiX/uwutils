@@ -1,6 +1,5 @@
 import discord
 import asyncio
-import logging
 import json
 from rich.pretty import pprint
 
@@ -8,13 +7,10 @@ import components_v2
 import dumper
 import utils
 
-file = open("token.txt").read().strip().split()
-token = file[0]
-channel = file[1]
+token = open("token.txt").read().strip()
 
-logging.getLogger("discord").setLevel(logging.CRITICAL)
-logging.getLogger("discord.client").setLevel(logging.CRITICAL)
-logging.getLogger("discord.state").setLevel(logging.CRITICAL)
+settings = utils.load("settings.json")
+channel = settings["channel_misc"]
 
 # TODO
 # reroll stats implementantion (compare [current] % with [new] % and if its bigger done)
@@ -26,7 +22,7 @@ logging.getLogger("discord.state").setLevel(logging.CRITICAL)
 
 best_qualities = {"l", "f"}
 all_passives = {
-    "lwolf", "adapt", "dstrike", "frarm", "gslay", "resonance",
+    "lwolf", "adapt", "dstrike", "frarm", "gslay", "resonance", "swarm",
     "hgen", "wgen", "hp", "wp", "pr", "mr", "sprout", "kkaze", "thorns",
     "att", "mag", "manatap", "critical", "lifesteal", "enrage", "snail",
     "sac", "safeguard", "discharge", "absolve", "kno"
@@ -43,12 +39,14 @@ weapons = {
 }
 # c | u | r | e | m | l | f
 custom_qualities = {"m"}
-custom_passives = {"kno"} | weapons["pstaff"]
+custom_passives = weapons["shield_rstaff"]
 custom = {q + p for q in custom_qualities for p in custom_passives}
 
-final =  fableds | custom
+standalone = {"esac", "msac", "cfrarm", "ufrarm", "rfrarm"}
 
-# pprint(final)
+final =  fableds | custom | standalone
+
+pprint(final)
 
 class MyClient(discord.Client):
     def __init__(self):
@@ -71,25 +69,25 @@ class MyClient(discord.Client):
 
         if message.author.id == utils.id_neonutil or message.author.id == utils.id_owo:
             if message.buttons:
-                for i in message.buttons:
-                    if i.emoji.name in ("check", "close", "weaponshard", "sync"):
-                        if i.emoji.name == "sync":
-                            btn = i
+                for btn in message.buttons:
+                    if btn.emoji.name in ("check", "close", "weaponshard", "sync"):
+                        if btn.emoji.name == "sync":
+                            button = btn
 
             if message.components:
-                for i in message.components:
-                    if "[NEW]" in i.content:
-                        cont = i.content
+                for components in message.components:
+                    if "[NEW]" in components.content:
+                        content = components.content
 
-            if not cont and not btn:
-                print("No Components and Buttons")
+            if not content or not button:
+                print("No Components/Buttons")
                 return
 
-            match = next((a for a in final if a in cont), None)
+            match = next((a for a in final if a in content), None)
 
             if not match:
                 try:
-                    await asyncio.sleep(0.25)
+                    await asyncio.sleep(0.1)
                     if not btn.disabled:
                         await btn.click(self.ws.session_id, self.local_headers, chann.guild.id)
                     else:

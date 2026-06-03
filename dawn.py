@@ -19,6 +19,7 @@ import utils
 on_mobile = utils.is_termux()
 if not on_mobile:
     from playsound3 import playsound
+    import winsound
 
 # only error messages when critical
 logging.getLogger("discord").setLevel(logging.CRITICAL)
@@ -35,16 +36,12 @@ lock = threading.Lock()
 
 # steal auto use gems from echoquill
 
-def clean(msg):
-    return re.sub(r"[\W]", "", msg)
-
-file = open("token.txt").read().strip().split()
-token = file[0]
+token = open("token.txt").read().strip()
 
 list_captcha = ["human", "captcha", "link", "letterword"]
 
 settings = utils.load("settings.json")
-data = utils.load("data.json")
+stats = utils.load("stats.json")
 
 ignoreGuilds = settings["bossBattle"]["ignoreGuilds"]
 joinGuilds = settings["bossBattle"]["joinGuilds"]
@@ -52,15 +49,22 @@ joinGuilds = settings["bossBattle"]["joinGuilds"]
 cmds = settings["commands"]
 cap = settings["captcha"]
 prefix = cmds["prefix"]
+debug = settings["debug_info"]
 
 if cap["image_solver"]:
     from captcha_solver.image_captcha import solveImageCaptcha
 
+def restart_dawn(): # unused for now
+    os.execv(sys.executable, [sys.executable] + sys.argv)
+
+def clean(msg):
+    return re.sub(r"[\W]", "", msg)
+
 def progress(item):
     with lock:
-        data["progress_lifetime"][item] += 1
-        data["progress_today"][item] += 1
-        utils.save("data.json", data)
+        stats["progress_lifetime"][item] += 1
+        stats["progress_today"][item] += 1
+        utils.save("stats.json", stats)
 
 class MyClient(discord.Client):
     def __init__(self):
@@ -70,10 +74,10 @@ class MyClient(discord.Client):
         self.watchdog_owo_message = time.monotonic()
         self.watchdog_battle_hunt = time.monotonic()
         self.watchdog_warned = False
-        self.dawnPaused = False
+        self.disconnected = False
 
-        self.last_battle_hunt = time.monotonic()
-        self.last_pray_curse = time.monotonic()
+        self.last_battle_hunt = time.monotonic() - 10
+        self.last_pray_curse = time.monotonic() - 310
 
         self.last_open = time.monotonic()
         self.last_openBoss = time.monotonic()
@@ -106,33 +110,36 @@ class MyClient(discord.Client):
         self.farmer.start()
         self.watchdog.start()
         asyncio.create_task(self.time_check())
-        
-    def restart_code(self):
-        os.execv(sys.executable, [sys.executable] + sys.argv)
 
     async def on_disconnect(self):
-        utils.notify("Paused Code", "on_disconnect")
-        utils.log("on_disconnect() | Paused", "#00ffff")
-        self.dawnPaused = True
+        if not self.disconnected:
+            utils.notify("Paused!", "on_disconnect")
+            utils.log("▶️ on_disconnect() | Paused!", "#00ffff")
+            self.watchdog_warned = True
+            self.disconnected = True
 
     def on_resumed(self):
-        utils.notify("Paused Code", "on_resumed")
-        utils.log("on_resumed() | Resumed", "#00ffff")
-        self.dawnPaused = False
+        # utils.notify("Resumed!", "on_resumed")
+        utils.log("⏸️ on_resumed() | Resumed!", "#00ffff")
+        self.watchdog_warned = False
+        self.disconnected = False
 
     def watchdog_unpause(self):
-        utils.log("Unpausing Code... ⚠️", "#00ffff")
+        utils.log("⏸️ Resuming...", "#00ffff")
         self.watchdog_on_message = time.monotonic()
         self.watchdog_owo_message = time.monotonic()
         self.watchdog_battle_hunt = time.monotonic()
-        self.captcha = False
         self.watchdog_warned = False
+        self.captcha = False
         try:
             self.reccur_captcha.cancel()
         except:
             pass
-        utils.log(f"Captcha: {self.captcha}", "#ffff00")
-        utils.log(f"Watchdog Warned: {self.watchdog_warned}", "#ffff00")
+
+    def watchdog_notify(self, wd_type):
+        self.watchdog_warned = True
+        utils.log(f"▶️ Watchdog: {wd_type} Timeout, Paused!", "red")
+        utils.notify(f"▶️ {wd_type} Timeout, Paused!", "Watchdog")
 
     @tasks.loop()
     async def watchdog(self):
@@ -143,21 +150,15 @@ class MyClient(discord.Client):
         if self.watchdog_warned:
             return
 
-        def watchdog_notify(wd_type):
-            self.captcha = True
-            self.watchdog_warned = True
-            utils.log(f"Watchdog: {wd_type} Timeout, Pausing Code..", "red")
-            utils.notify(f"{wd_type} Timeout, Pausing Code..", "Watchdog")
-
         if (now - self.watchdog_on_message) > 20:
-            watchdog_notify("on_message()")
+            self.watchdog_notify("on_message()")
 
         if (now - self.watchdog_owo_message) > 30:
-            watchdog_notify("OwO")
+            self.watchdog_notify("OwO")
 
         if cmds["hunt"] or cmds["battle"]:
             if (now - self.watchdog_battle_hunt) > 40:
-                watchdog_notify("Battle/Hunt")
+                self.watchdog_notify("Battle/Hunt")
 
     @tasks.loop(seconds=1)
     async def inputer(self):
@@ -165,29 +166,25 @@ class MyClient(discord.Client):
         key = await loop.run_in_executor(None, input)
 
         with lock:
-            def toggle(obj, key, color):
-                obj[key] = not obj[key]
-                utils.log(f"{key}: {obj[key]}", color)
+            def toggle(obj, key_name, color):
+                if isinstance(obj, dict):
+                    obj[key_name] = not obj[key_name]
+                    current_val = obj[key_name]
+                else:
+                    setattr(obj, key_name, not getattr(obj, key_name))
+                    current_val = getattr(obj, key_name)
+
+                utils.log(f"{key_name}: {current_val}", color)
 
             match key:
                 case "1": toggle(cmds, "battle", "purple")
                 case "2": toggle(cmds, "hunt", "yellow")
                 case "3": toggle(cmds, "owo", "#ffc0ff")
-                case "4": 
-                    cmds["pray"]["enabled"] = not cmds["pray"]["enabled"]
-                    utils.log(f"pray: {cmds["pray"]["enabled"]}", "#00ffff")
-                case "5": 
-                    cmds["curse"]["enabled"] = not cmds["curse"]["enabled"]
-                    utils.log(f"curse: {cmds["curse"]["enabled"]}", "#ff8000")
-                case "6":
-                    self.openCrates = not self.openCrates
-                    utils.log(f"openCrates: {self.openCrates}", "#c1ff30")
-                case "7":
-                    self.openBossCrates = not self.openBossCrates
-                    utils.log(f"openBossCrates: {self.openBossCrates}", "#c1ff30")
-                case "8":
-                    self.openLootboxes = not self.openLootboxes
-                    utils.log(f"openLootboxes: {self.openLootboxes}", "#c1ff30")
+                case "4": toggle(cmds, "pray", "#00ffff")
+                case "5": toggle(cmds, "curse", "#ff8000")
+                case "6": toggle(self, "openCrates", "#c1ff30")
+                case "7": toggle(self, "openBossCrates", "#c1ff30")
+                case "8": toggle(self, "openLootboxes", "#c1ff30")
                 case "w": toggle(cap, "openWebsite", "#00ffc0")
                 case "=":
                     cmds["cooldown"] += 0.25
@@ -209,21 +206,23 @@ class MyClient(discord.Client):
 
     @tasks.loop()
     async def farmer(self):
-        if self.captcha or self.dawnPaused or not self.channel:
+        if self.captcha or self.watchdog_warned or not self.channel:
             return
 
-        now = time.time()
+        now = time.monotonic()
 
         async def send(cmd, log_color):
             utils.log(f"sent: {prefix+cmd}", log_color)
             await self.channel.send(prefix + cmd)
 
         if (now - self.last_battle_hunt > cmds["cooldown"]):
+            if debug:
+                print(now, self.last_battle_hunt, now - self.last_battle_hunt)
             self.last_battle_hunt = now
             if cmds["battle"]:
                 await send("b", "purple")
             if cmds["hunt"]:
-                await send("h", "yellow")
+                await send("h", "#ffff00")
             if cmds["owo"]:
                 utils.log("sent: owo", "#ffb0ff")
                 await self.channel.send("owo")
@@ -234,6 +233,7 @@ class MyClient(discord.Client):
                 await send("wc all", "#c0ff30")
             if self.openLootboxes:
                 await send("lb all", "#c0ff30")
+
         if (now - self.last_openBoss >= 5.5):
             self.last_openBoss = now
             if self.openBossCrates:
@@ -252,7 +252,7 @@ class MyClient(discord.Client):
                 else:
                     await send("curse", "#ff8000")
 
-    async def cap_hand(self):
+    async def cap_handler(self):
         url = "https://owobot.com/captcha"
 
         if cap["notifications"]:
@@ -302,14 +302,7 @@ class MyClient(discord.Client):
     async def reccur_captcha(self):
         self.reccured += 1
         utils.log(f"Captcha detected! ⚠️ {self.reccured}/10", "red")
-        await self.cap_hand()
-
-        if self.reccured >= 10:
-            utils.log("Careful Twin ✌️", "yellow")
-            try:
-                self.reccur_captcha.cancel()
-            except:
-                pass
+        await self.cap_handler()
 
         await asyncio.sleep(60)
 
@@ -322,7 +315,7 @@ class MyClient(discord.Client):
             if message.content:
                 if message.content == "owo":
                     progress("owos")
-                    utils.log(f"😳 OwOs Today: {data['progress_today']['owos']}", "#ffffff")
+                    utils.log(f"😳 OwOs Today: {stats['progress_today']['owos']}", "#ffffff")
 
         if not message.author.id == utils.id_owo:
             return
@@ -331,7 +324,7 @@ class MyClient(discord.Client):
         if not self.owo_dm:
             self.owo_dm = await message.author.create_dm()
 
-        # captcha detection ($100000000)
+        # captcha detection ($1.000.000)
         if message.channel.id == self.channel.id:
             components = message.components
             content = clean(message.content)
@@ -347,11 +340,8 @@ class MyClient(discord.Client):
 
             if has_verify_button or has_warning_emoji or contains_captcha_word:
                 if not any(
-                    user in message.content for user in (
-                        self.user.name,
-                        f"<@{self.user.id}>",
-                        self.user.display_name)
-                        ):
+                    user in message.content
+                    for user in (self.user.name, f"<@{self.user.id}>", self.user.display_name)):
                     return
                 self.captcha = True
                 image_captcha = False
@@ -365,7 +355,7 @@ class MyClient(discord.Client):
                         pass
                 else:
                     utils.log("Captcha detected! ⚠️", "red")
-                    await self.cap_hand()
+                    await self.cap_handler()
 
                 if cap["image_solver"] and image_captcha:
                     utils.log("Attempting to solve image captcha", "#656b66")
@@ -379,8 +369,10 @@ class MyClient(discord.Client):
         if message.channel.id == self.owo_dm.id and "👍" in message.content:
             self.captcha = False
             self.watchdog_warned = False # Is something wrong with this or Am I just paranoid that it might disable itself and ban me again
-            progress("captchas")
-            utils.log(f"Captcha solved! ✅ | Captchas: {data['progress_today']['captchas']}", "green")
+            progress("captchas")            
+            winsound.Beep(1000, 100)
+            winsound.Beep(1000, 100)
+            utils.log(f"Captcha solved! ✅ | Captchas: {stats['progress_today']['captchas']}", "green")
             try:
                 self.reccur_captcha.cancel()
             except:
@@ -397,7 +389,7 @@ class MyClient(discord.Client):
                     if match:
                         xp = match.group(1)
                         progress("hunts")
-                        utils.log(f"🌱 gained +{xp} xp | Hunts: {data['progress_today']['hunts']}", "#ffffff")
+                        utils.log(f"🌱 gained +{xp} xp | Hunts: {stats['progress_today']['hunts']}", "#ffffff")
 
                 # praying/cursing printing ling ingy
                 if f"<@{self.user.id}>" in message.content:
@@ -412,7 +404,7 @@ class MyClient(discord.Client):
                         if match:
                             result = match.group(0)
                             progress("prays_curses")
-                            utils.log(f"{result} | prays/curses: {data['progress_today']['prays_curses']}", "#00ffff")
+                            utils.log(f"{result} | prays/curses: {stats['progress_today']['prays_curses']}", "#00ffff")
 
             # battle result print
             if message.embeds:
@@ -431,7 +423,7 @@ class MyClient(discord.Client):
 
                                 result = f"⚔️  {outcome} | {turns} | {xp} | {streak}"
                                 progress("battles")
-                                utils.log(f"{result} | Battles: {data['progress_today']['battles']}", "#ffffff")
+                                utils.log(f"{result} | Battles: {stats['progress_today']['battles']}", "#ffffff")
 
 # [ ----------------------------------------------------------------- ]
 # [ ---------------------- Boss Battle Section ---------------------- ]
@@ -440,27 +432,28 @@ class MyClient(discord.Client):
     def reset_boss_ticket(self, empty=False):
         if not empty:
             self.boss_tickets = 3
-            data["boss_tickets"] = 3
-            for k in data["progress_today"]:
-                data["progress_today"][k] = 0
+            stats["boss_tickets"] = 3
+            for k in stats["progress_today"]:
+                stats["progress_today"][k] = 0
         else:
             self.boss_tickets = 0
-            data["boss_tickets"] = 0
+            stats["boss_tickets"] = 0
 
-        print(f"reset_boss_ticket(empty: {empty}) | tickets: {self.boss_tickets}")
-        utils.save("data.json", data)
+        utils.save("stats.json", stats)
+        if debug:
+            print(f"reset_boss_ticket(empty: {empty}) | tickets: {self.boss_tickets}")
 
     def consume_boss_ticket(self, revert=False):
         if not revert:
             self.boss_tickets -= 1
-            data["boss_tickets"] -= 1
+            stats["boss_tickets"] -= 1
         else:
             self.boss_tickets += 1
-            data["boss_tickets"] += 1
-        
-        print(f"consume_boss_ticket(revert: {revert}) | tickets: {self.boss_tickets}")
+            stats["boss_tickets"] += 1
 
-        utils.save("data.json", data)
+        utils.save("stats.json", stats)
+        if debug:
+            print(f"consume_boss_ticket(revert: {revert}) | tickets: {self.boss_tickets}")
 
     def calc_time(self):
         pst_timezone = pytz.timezone("US/Pacific")                              # get timezone
@@ -477,7 +470,7 @@ class MyClient(discord.Client):
         return total_seconds                                                         # done
         # w echoquill ❤️‍🩹 https://media1.tenor.com/m/q63zC0DgjDYAAAAd/ishowspeed-speed.gif
 
-    def pst_midnight_ts(self):
+    def owo_last_reset_timestamp(self):
         now = datetime.now(timezone.utc).astimezone(pytz.timezone("US/Pacific"))
         midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
         return midnight.timestamp()
@@ -508,21 +501,21 @@ class MyClient(discord.Client):
         self.sleeping = False
 
     async def time_check(self):
-        self.boss_tickets = data["boss_tickets"]
-        ts_last_reset = data["boss_last_reset"]
+        self.boss_tickets = stats["boss_tickets"]
+        current_last_reset = stats["boss_last_reset"]
 
         if self.boss_tickets > 3 or self.boss_tickets < 0: # i dunno
             print("time check: invalid boss_tickets")
             self.reset_boss_ticket()
 
-        ts_today_midnight = self.pst_midnight_ts()
+        owo_last_reset = self.owo_last_reset_timestamp()
 
-        if not ts_last_reset or ts_last_reset < ts_today_midnight:
+        if not current_last_reset or current_last_reset < owo_last_reset:
             print("time check: resetting tickets and last_reset")
             self.reset_boss_ticket()
-            data["boss_last_reset"] = ts_today_midnight
+            stats["boss_last_reset"] = owo_last_reset
 
-            utils.save("data.json", data)
+            utils.save("stats.json", stats)
 
         self.sleeping = False
 

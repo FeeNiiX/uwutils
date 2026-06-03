@@ -1,20 +1,16 @@
+
 import discord
 import asyncio
-import logging
 import json
 import re
 
 import components_v2
-import dumper
 import utils
 
-file = open("token.txt").read().strip().split()
-token = file[0]
-channel = file[1]
+token = open("token.txt").read().strip()
 
-logging.getLogger("discord").setLevel(logging.CRITICAL)
-logging.getLogger("discord.client").setLevel(logging.CRITICAL)
-logging.getLogger("discord.state").setLevel(logging.CRITICAL)
+settings = utils.load("settings.json")
+channel = settings["channel_misc"]
 
 class MyClient(discord.Client):
     def __init__(self):
@@ -25,8 +21,10 @@ class MyClient(discord.Client):
         self.sending = False
         self.index = 0
 
-        self.dm = None
+        self.owo_dm = None
         self.owo_msg = None
+        self.owo_next_btn = None
+        self.label = None
 
     async def on_ready(self):
         print(f'Logged in as {self.user}')
@@ -35,11 +33,10 @@ class MyClient(discord.Client):
         self.local_headers["Authorization"] = token
 
     async def next_page(self, channel):
-        for btn in self.owo_btn:
-            if btn.emoji.name == "forward":
-                if not btn.disabled:
-                    await asyncio.sleep(0.25)
-                    await btn.click(self.ws.session_id, self.local_headers, channel.guild.id)
+        if not self.owo_next_btn.disabled:
+            print(self.owo_next_btn.emoji.name)
+            await asyncio.sleep(0.25)
+            await self.owo_next_btn.click(self.ws.session_id, self.local_headers, channel.guild.id)
 
     async def on_socket_raw_receive(self, msg):
         parsed_msg = json.loads(msg)
@@ -54,21 +51,23 @@ class MyClient(discord.Client):
         if message.author.id == utils.id_owo:
             if message.buttons:
                 for btn in message.buttons:
-                    if btn.emoji.name in ("back", "forward"):
+                    if btn.emoji and btn.emoji.name and btn.emoji.name == "forward":
                         self.owo_msg = message
-                        self.owo_btn = btn
+                        self.owo_next_btn = btn
+                    if btn.custom_id == "noop":
+                        self.label = btn.label
 
         if message.author.id == utils.id_neonutil:
             _msg = await chan.fetch_message(message.id)
 
             if self.captcha or not _msg or not _msg.embeds or not _msg.components:
                 return
-            if not self.owo_msg or not self.owo_btn:
+            if not self.owo_msg or not self.owo_next_btn or not self.label:
                 return
 
             for comps in _msg.components:
-                for i in comps.children:
-                    if not i.emoji.name in ("❔", "📊", "🔃"):
+                for child in comps.children:
+                    if not child.emoji.name in ("❔", "📊", "🔃"):
                         return
 
             for embed in _msg.embeds:
@@ -77,7 +76,7 @@ class MyClient(discord.Client):
                         self.matches = re.findall(r'`(.+)`.+max_possible', embed.description)
 
                         if self.matches:
-                            print(f"Captured IDs: {self.matches} in {self.owo_btn[2].label}")
+                            print(f"IDs in {self.label}: {self.matches}")
 
                             if not self.sending:
                                 self.sending = True
@@ -94,7 +93,7 @@ class MyClient(discord.Client):
                 await asyncio.sleep(1)
                 continue
 
-            print(f"sent: owow {i}")
+            print(f"sent: ww {i}")
             await chan.send(f"ww {i}")
             await asyncio.sleep(5.1)
 
