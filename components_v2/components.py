@@ -10,8 +10,11 @@
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 
-import aiohttp
+import asyncio
+import random
 import time
+
+import aiohttp
 
 
 def generate_nonce() -> str:
@@ -49,6 +52,8 @@ BUTTON_STYLES = {
     3: "success",
     4: "danger",
     5: "link",
+    # This seems to be appearing for some reason
+    6: "premium",
 }
 
 COMPONENT_NAMES = {
@@ -327,7 +332,7 @@ class accessory:
                     "message_flags": self._message_flag,
                     "data": {"component_type": 2, "custom_id": self.custom_id},
                 }
-
+                await asyncio.sleep(random.uniform(0.5, 1))
                 async with aiohttp.ClientSession() as http:
                     async with http.post(
                         "https://discord.com/api/v9/interactions",

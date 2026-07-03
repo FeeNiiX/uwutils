@@ -1,16 +1,22 @@
-
+import traceback
 import discord
 import asyncio
 import json
 import re
 
 import components_v2
+import dumper
 import utils
 
 token = open("token.txt").read().strip()
 
 settings = utils.load("settings.json")
 channel = settings["channel_misc"]
+
+def lineno():
+    frame_info = traceback.extract_stack()[-2]
+    lineno = frame_info.lineno
+    print(lineno)
 
 class MyClient(discord.Client):
     def __init__(self):
@@ -25,6 +31,7 @@ class MyClient(discord.Client):
         self.owo_msg = None
         self.owo_next_btn = None
         self.label = None
+        self.chan = None
 
     async def on_ready(self):
         print(f'Logged in as {self.user}')
@@ -32,10 +39,11 @@ class MyClient(discord.Client):
         self.local_headers = await components_v2.headers.generate_headers()
         self.local_headers["Authorization"] = token
 
+        self.chan = self.get_channel(channel)
+
     async def next_page(self, channel):
         if not self.owo_next_btn.disabled:
-            print(self.owo_next_btn.emoji.name)
-            await asyncio.sleep(0.25)
+            print("Going to the next page!")
             await self.owo_next_btn.click(self.ws.session_id, self.local_headers, channel.guild.id)
 
     async def on_socket_raw_receive(self, msg):
@@ -44,21 +52,20 @@ class MyClient(discord.Client):
             return
         message = components_v2.message.get_message_obj(parsed_msg["d"])
 
-        if message.channel_id != channel:
+        if not message.channel_id == channel or not self.chan:
             return
-        chan = self.get_channel(channel)
 
         if message.author.id == utils.id_owo:
             if message.buttons:
                 for btn in message.buttons:
                     if btn.emoji and btn.emoji.name and btn.emoji.name == "forward":
-                        self.owo_msg = message
+                        self.owo_msg = await self.chan.fetch_message(message.id)
                         self.owo_next_btn = btn
                     if btn.custom_id == "noop":
                         self.label = btn.label
 
         if message.author.id == utils.id_neonutil:
-            _msg = await chan.fetch_message(message.id)
+            _msg = await self.chan.fetch_message(message.id)
 
             if self.captcha or not _msg or not _msg.embeds or not _msg.components:
                 return
@@ -80,9 +87,9 @@ class MyClient(discord.Client):
 
                             if not self.sending:
                                 self.sending = True
-                                asyncio.create_task(self.worker(chan))
+                                asyncio.create_task(self.worker(self.chan))
                         else:
-                            await self.next_page(chan)
+                            await self.next_page(self.chan)
 
     # maybe "worker" isnt needed, put in the for loop at if messages == neonutil
     # or maybe it is, because imagine all this in the for loop
@@ -94,7 +101,7 @@ class MyClient(discord.Client):
                 continue
 
             print(f"sent: ww {i}")
-            await chan.send(f"ww {i}")
+            await self.owo_msg.reply(f"ww {i}")
             await asyncio.sleep(5.1)
 
             self.index += 1
@@ -113,16 +120,18 @@ class MyClient(discord.Client):
             self.owo_dm = await message.author.create_dm()
             return
 
-        if "⚠️" in message.content and message.channel.id == channel:
-            self.captcha = True
-            if self.index > 0:
-                self.index -= 1
-            utils.log("Captcha Detected! ⚠️", "red")
-            utils.notify(f"Captcha Detected!", f"Captcha - {self.user.name}!")
+        if message.channel.id == channel:
+            if "⚠️" in message.content:
+                self.captcha = True
+                if self.index > 0:
+                    self.index -= 1
+                utils.log("Captcha Detected! ⚠️", "red")
+                utils.notify(f"Captcha Detected!", f"Captcha - {self.user.name}!")
 
-        if "👍" in message.content and message.channel.id == self.owo_dm:
-            self.captcha = False
-            utils.log("Captcha Solved ✅", "green")
+        if message.channel.id == self.owo_dm.id:
+            if "👍" in message.content:
+                self.captcha = False
+                utils.log("Captcha Solved ✅", "green")
 
 client = MyClient()
 client.run(token)

@@ -1,7 +1,6 @@
 {
     "channel": 67,
     "channel_misc": 67,
-    "debug_info": true,
     "captcha": {
         "reccur": true,
         "notifications": true,
@@ -26,6 +25,26 @@
         "curse": {
             "enabled": false,
             "pingId": null
+        },
+        "autoUseGems": {
+            "enabled": false,
+            "lowestToHighest": true,
+            "partialCombinations": false,
+            "tiers": {
+                "common": true,
+                "uncommon": true,
+                "rare": true,
+                "epic": true,
+                "mythical": false,
+                "legendary": false,
+                "fabled": false
+            },
+            "gemsToUse": {
+                "huntGem": true,
+                "empoweredGem": true,
+                "luckyGem": true,
+                "specialGem": false
+            }
         }
     },
     "bossBattle": {

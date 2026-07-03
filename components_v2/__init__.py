@@ -10,9 +10,7 @@
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 
-from . import components
-from . import headers
-from . import message
+from . import components, headers, message
 
 # This shuts Ruff warnings.
 __all__ = ["components", "headers", "message"]

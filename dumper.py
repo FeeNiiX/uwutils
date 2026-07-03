@@ -1,42 +1,53 @@
-import rich.pretty
 import json
 import os
+import rich.pretty
 
-def dumpy(obj, depth=4, key=None):
-    if key in ("author", "channel", "guild", "members"):
-        depth = min(depth, 1) # 100k lines to less than 1k
+def dump(obj, depth, key=None, seen=None):
+    if seen is None:
+        seen = set()
+
+    if id(obj) in seen:
+        return f"<Circular Ref: {type(obj).__name__}>"
 
     if depth <= 0:
         return str(obj)
 
-    if isinstance(obj, list):
-        return [dumpy(v, depth - 1) for v in obj]
-
-    if isinstance(obj, dict):
-        return {str(k): dumpy(v, depth - 1) for k, v in obj.items()}
-
-    if hasattr(obj, "__dict__"):
-        return {
-            "__type__": type(obj).__name__,
-            **{k: dumpy(v, depth - 1) for k, v in vars(obj).items()}
-        }
-
-    if hasattr(obj, "__slots__"):
-        result = {}
-
-        for attr in dir(obj):
-            if attr.startswith("_"):
-                continue
-            try:
-                value = getattr(obj, attr)
-                if not callable(value):
-                    result[attr] = dumpy(value, depth - 1, key=attr)
-            except:
-                continue
-        return result
+    if isinstance(obj, (str, int, float, bool, type(None))):
+        return obj
 
     if hasattr(obj, "to_dict"):
-        return dumpy(obj.to_dict(), depth - 1)
+        return dump(obj.to_dict(), depth - 1, seen=seen)
+
+    if isinstance(obj, list):
+        return [dump(v, depth - 1, seen=seen) for v in obj]
+
+    if isinstance(obj, dict):
+        return {str(k): dump(v, depth - 1, key=str(k), seen=seen) for k, v in obj.items()}
+
+    has_dict = hasattr(obj, "__dict__")
+    has_slots = hasattr(obj, "__slots__")
+
+    if has_dict or has_slots:
+        seen.add(id(obj))
+        result = {"__type__": type(obj).__name__}
+
+        if has_dict:
+            for k, v in vars(obj).items():
+                result[k] = dump(v, depth - 1, key=k, seen=seen)
+
+        if has_slots:
+            for attr in dir(obj):
+                if attr.startswith("_") or attr in result:
+                    continue
+                try:
+                    v = getattr(obj, attr)
+                    if not callable(v):
+                        result[attr] = dump(v, depth - 1, key=attr, seen=seen)
+                except:
+                    continue
+
+        seen.remove(id(obj))
+        return result
 
     try:
         json.dumps(obj)
@@ -44,22 +55,23 @@ def dumpy(obj, depth=4, key=None):
     except:
         return str(obj)
 
-def savey(obj, depth=4, filename="dump.json"):
-    data = dumpy(obj, depth)
+def save(obj, depth=4, filename="dump.json"):
+    data = dump(obj, depth)
+    existing = []
 
     if os.path.exists(filename):
         with open(filename, "r", encoding="utf-8") as f:
             try:
                 existing = json.load(f)
-            except:
+                if not isinstance(existing, list):
+                    existing = [existing]
+            except Exception:
                 existing = []
-    else:
-        existing = []
 
     existing.append(data)
 
     with open(filename, "w", encoding="utf-8") as f:
         json.dump(existing, f, indent=4, ensure_ascii=False)
 
-def printy(obj, depth=4):
-    rich.pretty.pprint(dumpy(obj, depth))
+def print(obj, depth=4):
+    rich.pretty.pprint(dump(obj, depth))
