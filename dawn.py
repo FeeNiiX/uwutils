@@ -20,76 +20,73 @@ import utils
 import shutil
 
 on_mobile = utils.is_termux()
-if not on_mobile:
-    try:
-        from playsound3 import playsound
-    except Exception:
-        playsound = None
+try:
+    from playsound3 import playsound
+    import winsound
+    from selenium import webdriver
+    from selenium.webdriver.chrome.options import Options
+    from webdriver_manager.chrome import ChromeDriverManager
+    from selenium.webdriver.chrome.service import Service
+except Exception:
+    playsound = None
+    winsound = None
+    webdriver = None
+    Options = None
+    ChromeDriverManager = None
+    Service = None
 
+def _play_system_sound_once():
     try:
-        import winsound
+        if winsound and sys.platform.startswith("win"):
+            winsound.Beep(1000, 200)
+            return True
+        if sys.platform == "darwin":
+            if shutil.which("afplay"):
+                os.system("afplay /System/Library/Sounds/Glass.aiff >/dev/null 2>&1")
+                return True
+            # fallback to osascript beep
+            if shutil.which("osascript"):
+                os.system("osascript -e 'beep' >/dev/null 2>&1")
+                return True
+        if sys.platform.startswith("linux"):
+            if shutil.which("paplay"):
+                os.system("paplay /usr/share/sounds/freedesktop/stereo/complete.oga >/dev/null 2>&1")
+                return True
+            if shutil.which("aplay"):
+                os.system("aplay /usr/share/sounds/alsa/Front_Center.wav >/dev/null 2>&1")
+                return True
+            if shutil.which("beep"):
+                os.system("beep >/dev/null 2>&1")
+                return True
+        # generic terminal bell fallback
+        print('\a', end='', flush=True)
+        return True
     except Exception:
-        winsound = None
+        try:
+            print('\a', end='', flush=True)
+        except Exception:
+            pass
+        return False
 
-    def _play_system_sound_once():
+async def Beep(times=1, freq=1000, duration=200):
+    for i in range(times):
         try:
             if winsound and sys.platform.startswith("win"):
-                winsound.Beep(1000, 200)
-                return True
-            if sys.platform == "darwin":
-                if shutil.which("afplay"):
-                    os.system("afplay /System/Library/Sounds/Glass.aiff >/dev/null 2>&1")
-                    return True
-                # fallback to osascript beep
-                if shutil.which("osascript"):
-                    os.system("osascript -e 'beep' >/dev/null 2>&1")
-                    return True
-            if sys.platform.startswith("linux"):
-                if shutil.which("paplay"):
-                    os.system("paplay /usr/share/sounds/freedesktop/stereo/complete.oga >/dev/null 2>&1")
-                    return True
-                if shutil.which("aplay"):
-                    os.system("aplay /usr/share/sounds/alsa/Front_Center.wav >/dev/null 2>&1")
-                    return True
-                if shutil.which("beep"):
-                    os.system("beep >/dev/null 2>&1")
-                    return True
-            # generic terminal bell fallback
-            print('\a', end='', flush=True)
-            return True
+                winsound.Beep(freq, duration)
+            else:
+                played = _play_system_sound_once()
+                if not played and playsound:
+                    try:
+                        playsound.__call__("", block=False)
+                    except Exception:
+                        pass
         except Exception:
             try:
-                print('\a', end='', flush=True)
+                _play_system_sound_once()
             except Exception:
                 pass
-            return False
+        await asyncio.sleep(duration / 1000.0)
 
-    def Beep(times=1, freq=1000, duration=200):
-        for i in range(times):
-            try:
-                if winsound and sys.platform.startswith("win"):
-                    winsound.Beep(freq, duration)
-                else:
-                    played = _play_system_sound_once()
-                    if not played and playsound:
-                        try:
-                            playsound.__call__("", block=False)
-                        except Exception:
-                            pass
-            except Exception:
-                try:
-                    _play_system_sound_once()
-                except Exception:
-                    pass
-            time.sleep(duration / 1000.0)
-else:
-    def Beep(a, b, c):
-        return
-
-# only error messages when critical
-# logging.getLogger("discord").setLevel(logging.CRITICAL)
-# logging.getLogger("discord.client").setLevel(logging.CRITICAL)
-# logging.getLogger("discord.state").setLevel(logging.CRITICAL)
 
 lock = threading.Lock()
 
@@ -104,6 +101,11 @@ owo_prefix = settings["commands"]["prefix"]
 
 if settings["captcha"]["image_solver"]:
     from captcha_solver.image_captcha import solveImageCaptcha
+
+if settings["hideErrors"]:
+    logging.getLogger("discord").setLevel(logging.CRITICAL)
+    logging.getLogger("discord.client").setLevel(logging.CRITICAL)
+    logging.getLogger("discord.state").setLevel(logging.CRITICAL)
 
 gem_tiers = {
     "common": ["051", "065", "072", "079"],
@@ -165,9 +167,87 @@ def progress(item):
         stats["progress_today"][item] += 1
         utils.save("stats.json", stats)
 
+from rich.console import Console
+from rich.panel import Panel
+from rich.table import Table
+from rich.align import Align
+
+def print_pretty_menu():
+    console = Console()
+
+    # Create the main layout table with 2 columns
+    layout_table = Table.grid(expand=True)
+    layout_table.add_column(ratio=1)
+    layout_table.add_column(ratio=1)
+
+    # --- LEFT PANELS (Core Loops & Utilities) ---
+    core_table = Table.grid(expand=True)
+    core_table.add_column(width=6, justify="right")
+    core_table.add_column()
+    core_table.add_row(r"[bold purple]\[1][/]", " Auto Battle")
+    core_table.add_row(r"[bold yellow]\[2][/]", " Auto Hunt")
+    core_table.add_row(r"[bold #ffc0ff]\[3][/]", " Auto OwO")
+    core_table.add_row(r"[bold #00ffff]\[4][/]", " Auto Pray")
+    core_table.add_row(r"[bold #ff8000]\[5][/]", " Auto Curse")
+    panel_core = Panel(core_table, title="[bold white]🤖 Farms[/]", border_style="purple")
+
+    util_table = Table.grid(expand=True)
+    util_table.add_column(width=6, justify="right")
+    util_table.add_column()
+    util_table.add_row(r"[bold #00ffc0]\[W][/]", " Open Website")
+    util_table.add_row(r"[bold #00ffc0]\[O][/]", " Nopecha Refresh")
+    util_table.add_row(r"[bold #00ffc0]\[=][/]", " Cooldown +0.25s")
+    util_table.add_row(r"[bold #00ffc0]\[-][/]", " Cooldown -0.25s")
+    util_table.add_row(r"[bold cyan]\[T][/]", " Add Boss Ticket")
+    panel_utils = Panel(util_table, title="[bold white]🧩 Utilities & Captcha[/]", border_style="#00ffc0")
+
+    # --- RIGHT PANELS (Crates & Gems, System) ---
+    items_table = Table.grid(expand=True)
+    items_table.add_column(width=6, justify="right")
+    items_table.add_column()
+    items_table.add_row(r"[bold #c1ff30]\[6][/]", " Auto Open Crates")
+    items_table.add_row(r"[bold #c1ff30]\[7][/]", " Auto Open Boss Crates")
+    items_table.add_row(r"[bold #8b25ff]\[8][/]", " Auto Use Gems")
+    items_table.add_row(r"[bold #8b25ff]\[9][/]", " Auto Gems: Lowest To Highest")
+    items_table.add_row(r"[bold #8b25ff]\[0][/]", " Auto Gems: Partial Combinations")
+    panel_items = Panel(items_table, title="[bold white]📦 Crates & Gems[/]", border_style="#8b25ff")
+
+    sys_table = Table.grid(expand=True)
+    sys_table.add_column(width=6, justify="right")
+    sys_table.add_column()
+    sys_table.add_row(r"[bold red]\[C][/]", " Pause")
+    sys_table.add_row(r"[bold red]\[R][/]", " Unpause")
+    sys_table.add_row(r"[bold red]\[X][/]", " Exit Script")
+    panel_sys = Panel(sys_table, title="[bold white]⚙️ System[/]", border_style="red")
+
+    # Combine them into rows inside our structural table
+    layout_table.add_row(panel_core, panel_items)
+    layout_table.add_row(panel_utils, panel_sys)
+
+    # Dynamic Header Panel using Align.center()
+    header_text = Align.center("[bold white]OwO Dawn Control Panel[/]")
+    header_panel = Panel(
+        header_text, 
+        border_style="#00ffff"
+    )
+
+    # Print Dashboard Layout
+    console.print()
+    console.print(header_panel)
+    console.print(layout_table)
+
+# Run it
+print_pretty_menu()
+
 class MyClient(discord.Client):
     def __init__(self):
-        super().__init__(enable_debug_events=True)
+        super().__init__(
+            enable_debug_events=True,
+            max_messages=None,
+            guild_subscriptions=False
+            )
+
+        self.already_ready = False
 
         # Watchdog
         self.watchdog_on_message = time.monotonic()
@@ -192,6 +272,8 @@ class MyClient(discord.Client):
         self.channel = None
         self.owo_dm = None
 
+        self.driver = None
+
         # Auto Boss Battle
         self.boss_tickets = 3
         self.joined_boss_ids = []
@@ -205,32 +287,47 @@ class MyClient(discord.Client):
         self.session = None
 
     async def on_ready(self):
-        utils.printBox(f"Logged in as {self.user}[*]", "purple")
+        if self.already_ready:
+            utils.log("Restarting in 5 min", "#ff8080")
+            await asyncio.sleep(300)
+            restart()
+        else:
+            log = Align.center("[purple]Logged In[/]")
+            logged = Panel(
+                log, 
+                border_style="purple"
+            )
+            Console().print(logged)
 
-        self.local_headers = await components_v2.headers.generate_headers()
-        self.local_headers["Authorization"] = token
-        if self.session is None:
-            self.session = aiohttp.ClientSession()
+            self.already_ready = True
 
-        self.channel = self.get_channel(settings["channel"])
+            self.local_headers = await components_v2.headers.generate_headers()
+            self.local_headers["Authorization"] = token
 
-        self.inputer.start()
-        self.farmer.start()
-        self.watchdog.start()
-        asyncio.create_task(self.time_check())
+            if self.session is None:
+                timeout = aiohttp.ClientTimeout(total=10, connect=5) 
+                self.session = aiohttp.ClientSession(timeout=timeout)
+
+            self.channel = self.get_channel(settings["channel"])
+
+            self.inputer.start()
+            self.farmer.start()
+            self.watchdog.start()
+
+            asyncio.create_task(self.time_check())
 
     async def on_disconnect(self):
         if not self.watchdog_warned:
             utils.notify("Paused!", "on_disconnect")
             utils.log("▶️ on_disconnect() | Paused!", "#00ffff")
-            Beep(1, 1000, 150)
+            await Beep(1, 1000, 150)
             self.watchdog_warned = True
 
     async def on_resumed(self):
         # utils.notify("Resumed!", "on_resumed")
         utils.log("⏸️ on_resumed() | Resumed!", "#00ffff")
         self.watchdog_warned = False
-        Beep(2, 500, 75)
+        await Beep(2, 500, 75)
 
     def watchdog_unpause(self):
         utils.log("⏸️ Resuming...", "#00ffff")
@@ -242,12 +339,15 @@ class MyClient(discord.Client):
         except:
             pass
 
-    def watchdog_notify(self, wd_type):
+    async def watchdog_notify(self, wd_type):
         self.watchdog_warned = True
         utils.log(f"▶️ Watchdog: {wd_type} Timeout, Paused!", "red")
         utils.notify(f"▶️ {wd_type} Timeout, Paused!", "Watchdog")
+        utils.log(f"Restarting in 5 mins", "red")
+        await asyncio.sleep(300)
+        restart()
 
-    @tasks.loop()
+    @tasks.loop(seconds=1)
     async def watchdog(self):
         now = time.monotonic()
         if self.captcha:
@@ -256,34 +356,55 @@ class MyClient(discord.Client):
         if self.watchdog_warned:
             if not self.last_beep:
                 self.last_beep = time.monotonic()
-            if (now - self.last_beep) >= 60:
-                Beep(2, 500, 100)
+            if (now - self.last_beep) >= 30:
+                await Beep(2, 500, 100)
                 self.last_beep = time.monotonic()
             return
 
         if (now - self.watchdog_on_message) >= 20:
-            self.watchdog_notify("on_message()")
+            await self.watchdog_notify("on_message()")
 
         if (now - self.watchdog_owo_message) >= 30:
-            self.watchdog_notify("OwO")
+            await self.watchdog_notify("OwO")
 
         if settings["commands"]["hunt"] or settings["commands"]["battle"]:
             if (now - self.watchdog_battle_hunt) >= 40:
-                self.watchdog_notify("Battle/Hunt")
+                await self.watchdog_notify("Battle/Hunt")
+
+    @watchdog.error
+    async def watchdog_error(self, error):
+        await asyncio.sleep(5)
+        self.watchdog.restart()
 
     @tasks.loop(seconds=1)
     async def inputer(self):
         loop = asyncio.get_running_loop()
-        key = await loop.run_in_executor(None, input)
+        try:
+            # Wait for user input
+            raw_key = await loop.run_in_executor(None, input)
+            # Strip whitespace and convert to lowercase to catch "X" or "x "
+            key = str(raw_key).strip().lower() 
+        except EOFError:
+            return
 
+        # Handle exit OUTSIDE the lock to prevent freezing
+        if key == "x":
+            utils.log("Shutting down cleanly...", "red")
+            try:
+                await self.close() # Safely close the Discord connection
+            except:
+                pass
+            os._exit(0) # Force system exit
+
+        # Handle everything else inside the lock
         with lock:
-            def toggle(obj, key,  name, color):
+            def toggle(obj, dict_key, name, color):
                 if isinstance(obj, dict):
-                    obj[key] = not obj[key]
-                    val = obj[key]
+                    obj[dict_key] = not obj[dict_key]
+                    val = obj[dict_key]
                 else:
-                    setattr(obj, key, not getattr(obj, key))
-                    val = getattr(obj, key)
+                    setattr(obj, dict_key, not getattr(obj, dict_key))
+                    val = getattr(obj, dict_key)
 
                 utils.log(f"{name}: {val}", color)
 
@@ -296,10 +417,12 @@ class MyClient(discord.Client):
                 case "6": toggle(self, "openCrates", "Auto Crates", "#c1ff30")
                 case "7": toggle(self, "openBossCrates", "Auto Boss Crates", "#c1ff30")
                 case "8": toggle(settings["commands"]["autoUseGems"], "enabled", "Auto Gems", "#8b25ff")
-                case "9": toggle(settings["commands"]["autoUseGems"], "lowestToHighest", "Lowest To Highest", "#8b25ff")
-                case "0": toggle(settings["commands"]["autoUseGems"], "partialCombinations", "Partial Combinations", "#8b25ff")
+                case "9": toggle(settings["commands"]["autoUseGems"], "lowestToHighest", "Auto Gems: Lowest To Highest", "#8b25ff")
+                case "0": toggle(settings["commands"]["autoUseGems"], "partialCombinations", "Auto Gems: Partial Combinations", "#8b25ff")
                 case "w": toggle(settings["captcha"], "openWebsite", "Open Website", "#00ffc0")
+                case "o": toggle(settings["captcha"], "nopecha", "Nopecha Refresh", "#00ffc0")
                 case "c": toggle(self, "captcha", "Paused", "red")
+                case "t": self.boss_tickets += 1; stats["boss_tickets"] += 1
                 case "=":
                     settings["commands"]["cooldown"] += 0.25
                     utils.log(f"cooldown: {settings['commands']['cooldown']}", "#00ffc0")
@@ -307,21 +430,24 @@ class MyClient(discord.Client):
                     settings["commands"]["cooldown"] -= 0.25
                     utils.log(f"cooldown: {settings['commands']['cooldown']}", "#00ffc0")
                 case "r": self.watchdog_unpause()
-                case "p": await self.cap_handler()
-                case "x": os._exit(1)
+                case "": pass # Ignore accidental empty "Enter" presses
                 case _: utils.log(f"Invalid key: {key}", "white")
 
             utils.save("settings.json", settings)
 
     async def send(self, cmd, color, use_prefix=True):
-        if use_prefix:
-            utils.log(f"sent: {owo_prefix + cmd}", color)
-            await self.channel.send(owo_prefix + cmd)
-        else:
-            utils.log(f"sent: {cmd}", color)
-            await self.channel.send(cmd)
+        try:
+            if use_prefix:
+                utils.log(f"Ran - {owo_prefix + cmd}", color)
+                await self.channel.send(owo_prefix + cmd)
+            else:
+                utils.log(f"Ran - {cmd}", color)
+                await self.channel.send(cmd)
+        except Exception as e:
+            # Silently catch network drops instead of printing a massive error wall
+            utils.log(f"⚠️ Network error sending '{cmd}'. Retrying next loop...", "red")
 
-    @tasks.loop()
+    @tasks.loop(seconds=1)
     async def farmer(self):
         if self.captcha or self.watchdog_warned or not self.channel:
             return
@@ -347,7 +473,7 @@ class MyClient(discord.Client):
             if self.openBossCrates:
                 await self.send("use 99", "#c0ff30")
 
-        if (now - self.last_pray_curse) >= 300:
+        if (now - self.last_pray_curse) >= 301:
             self.last_pray_curse = now
             if settings["commands"]["pray"]["enabled"]:
                 if settings["commands"]["pray"]["pingId"]:
@@ -359,6 +485,12 @@ class MyClient(discord.Client):
                     await self.send(f"curse <@{settings["commands"]["curse"]["pingId"]}>", "#ff8000")
                 else:
                     await self.send("curse", "#ff8000")
+
+    @farmer.error
+    async def farmer_error(self, error):
+        utils.log("⚠️ Farmer loop crashed (Wi-Fi drop?). Restarting in 5s...", "red")
+        await asyncio.sleep(5)
+        self.farmer.restart()
 
     async def cap_handler(self):
         url = "https://owobot.com/captcha"
@@ -383,7 +515,49 @@ class MyClient(discord.Client):
                 if on_mobile:
                     utils.run_system_command(f"termux-toast -c 'white' -b 'black' -g 'top' 'Captcha Detected'", timeout=3, retry=True)
 
-            if settings["captcha"]["openWebsite"]:
+            if settings["captcha"]["nopecha"] and sys.platform.startswith("win"):
+                driver_active = False
+
+                if self.driver:
+                    print("if self.driver")
+                    try:
+                        print("try: _ = self.driver.current_url")
+                        _ = self.driver.current_url
+                        driver_active = True
+                    except Exception:
+                        print("Exeception in if self.driver")
+                        self.driver = None
+
+                if not driver_active:
+                    print("if not driver_active")
+                    try:
+                        print("try request.get")
+                        requests.get("http://127.0.0.1:9222/json/version", timeout=1)
+                    except:
+                        print("except")
+                        current_dir = os.path.abspath(os.getcwd())
+                        profile_path = os.path.join(current_dir, "ChromeProfile")
+
+                        subprocess.Popen([
+                            r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+                            "--remote-debugging-port=9222",
+                            f"--user-data-dir={profile_path}"
+                        ])
+                        await asyncio.sleep(1)
+
+                    options = Options()
+                    options.debugger_address = "127.0.0.1:9222"
+
+                    self.driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
+
+                if url not in self.driver.current_url:
+                    print("going to url")
+                    self.driver.get(url)
+                else:
+                    print("refreshing")
+                    self.driver.refresh()
+
+            if settings["captcha"]["openWebsite"] or self.reccured >= 5:
                 current_step = "Opening Website"
 
                 if on_mobile:
@@ -391,6 +565,7 @@ class MyClient(discord.Client):
                 else:
                     if sys.platform.startswith("win"):
                         utils.run_system_command(f"start {url}", timeout=5, retry=True)
+
                     elif sys.platform == "darwin":
                         # Macos
                         utils.run_system_command(f"open {url}", timeout=5, retry=True)
@@ -401,13 +576,11 @@ class MyClient(discord.Client):
         except Exception as e:
             print(f"{e} - at {current_step}")
 
-    @tasks.loop()
+    @tasks.loop(seconds=60)
     async def reccur_captcha(self):
         self.reccured += 1
         utils.log(f"Captcha detected! ⚠️ {self.reccured}/10", "red")
         await self.cap_handler()
-
-        await asyncio.sleep(60)
 
     def get_nick(self, msg):
         if not msg.guild:
@@ -480,7 +653,7 @@ class MyClient(discord.Client):
             self.captcha = False
             self.watchdog_warned = False # Is something wrong with this or Am I just paranoid that it might disable itself and ban me again
             progress("captchas")
-            Beep(2, 1500, 75)
+            await Beep(2, 1500, 75)
             utils.log(f"Captcha solved! ✅ | Captchas: {stats['progress_today']['captchas']}", "green")
             try:
                 self.reccur_captcha.cancel()
@@ -518,15 +691,12 @@ class MyClient(discord.Client):
                     slowdown_match = re.search(r"<t:(\d+):[Rr]>", message.content)
                     if slowdown_match:
                         try:
-                            slowdown_ts = int(slowdown_match.group(1))
-                            now_ts = time.time()
-                            delta = slowdown_ts - now_ts
-                            if delta > 10:
-                                self.last_pray_curse = time.monotonic() + delta - 300
-                                print(f"Pray too early, retrying in: {delta}s")
-                            elif delta <= 300:
-                                self.last_battle_hunt = time.monotonic() + delta - 15
-                                print(f"Battle too early, retrying in: {delta}s")
+                            slowdown_timestamp = int(slowdown_match.group(1))
+                            now_timestamp = time.time()
+                            delta = slowdown_timestamp - now_timestamp
+                            if delta > 14:
+                                self.last_pray_curse = time.monotonic() + delta - 300 + 3
+                                print(f"now's timestamp: {now_timestamp}\nslowdown timestamp: {slowdown_timestamp}\nlast pray/curse: {self.last_pray_curse}\nretrying in: {delta}s")
                         except Exception:
                             pass
 
@@ -733,13 +903,18 @@ class MyClient(discord.Client):
 
         if self.boss_tickets <= 0 or self.sleeping:
             if not self.sleeping:
-                utils.log("Not enough boss tickets (stats.json)..", "#143B02")
+                utils.log("Not enough boss tickets.. (stats.json)", "#143B02")
                 await self.wait_till_reset_day()
             return
 
-        parsed_msg = json.loads(msg)
-        if parsed_msg.get("t") != "MESSAGE_CREATE":
+        if '"t":"MESSAGE_CREATE"' not in msg:
             return
+
+        parsed_msg = json.loads(msg)
+
+        # parsed_msg = json.loads(msg)
+        # if parsed_msg.get("t") != "MESSAGE_CREATE":
+        #     return
 
         message = components_v2.message.get_message_obj(parsed_msg["d"])
 
@@ -753,6 +928,8 @@ class MyClient(discord.Client):
                                 return
                             else:
                                 self.joined_boss_ids.append(battle_id)
+                                if len(self.joined_boss_ids) > 100:
+                                    self.joined_boss_ids.pop(0)
 
                             if (comps.accessory and comps.accessory.component_name == "button"):
                                 if comps.accessory.custom_id == "guildboss_fight":
@@ -778,7 +955,7 @@ class MyClient(discord.Client):
                             self.consume_boss_ticket(revert=True)
 
                         if "You don't have any boss tickets!" in comps.content:
-                            utils.log("You don't have any boss tickets (Message)!", "#B5C1CE")
+                            utils.log("You don't have any boss tickets! (Message)", "#B5C1CE")
                             self.reset_boss_ticket(empty=True)
                             self.joined_boss_ids = []
 
